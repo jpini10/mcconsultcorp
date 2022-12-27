@@ -1,0 +1,115 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\AsignarProductoEmpleado;
+use App\Models\empresa;
+use App\Models\producto;
+use App\Models\sucursal;
+use App\Models\User;
+use Illuminate\Foundation\Auth\User as AuthUser;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use phpDocumentor\Reflection\DocBlock\Tags\Uses;
+use Illuminate\Support\Facades\Auth;
+class AsignarProductoEmpleadoController extends Controller
+{
+    public function index()
+    {
+        $empresas=empresa::get(); 
+        $sucursal=sucursal::get();
+        $usuarios=User::where ('id','!=','1')->get();
+    //    return dd($empresa);
+        $sucursal=DB::select("CALL Sp_listarSucursales()");
+        // return dd($usuarios);
+         return view('asignacion.index',compact('empresas','sucursal','usuarios'));
+    }
+    public function create()
+    {
+        //
+    }
+    public function sucursalobtenida($id){
+        return json_encode(DB::table('sucursals')->where('empresa_id', $id)->get());     
+    }
+    public function loteobtenido(){
+        // return dd($id);
+        return json_encode(DB::select("SELECT l.id, l.lote  FROM lotes_controllers as l"));
+}
+    public function usuariostotales($idEmpresa,$idSucursal , $lote){
+        
+        // $usuarios=user::get();
+        // return datatables()->of($usuarios)->toJson();
+    return json_encode(DB::select("SELECT DISTINCT EM.id, EM.name  FROM users  AS EM
+    INNER JOIN asignar_producto_empleados AS APE ON EM.id = APE.user_id 
+    WHERE   APE.empresa_id = 1 AND APE.sucursal_id = 1 
+    AND APE.lote_id=1 AND EM.id !=1",array($idEmpresa,$idSucursal, $lote)));    
+    }
+    public function traerproductosasignados1($empresa_id,$sucursal_id,$lote_id,$user_id){
+        return datatables()->of(DB::select('CALL Sp_ListarProductosPorEmpresaSucursalLoteUsuario(?,?,?,?)',array($empresa_id,$sucursal_id,$lote_id,$user_id)))
+//    ->addColumn('btn','<a href="{{ route (\'asignacion.edit\',$id)}}" class="btn btn-warning btn-sm" style="display:inline-block;"><i class="fas fa-edit"></i></a>')
+//    ->rawColumns(['btn'])
+        ->toJson();
+    }
+    public function traerasignacion()
+    {
+        $asignacion=AsignarProductoEmpleado::select('coteo', 'diferencias')->get();
+        return datatables()->of($asignacion)->toJson();
+
+    }
+    
+    
+    public function store(Request $request)
+    {
+        //
+    }
+    public function show(AsignarProductoEmpleado $asignarProductoEmpleado)
+    {
+        //
+    }
+    public function edit($id)
+    {
+        $asignacion = AsignarProductoEmpleado::findOrFail($id);
+        $producto = Producto::findOrFail($asignacion->producto_id);
+        $users=User::where ('id','==','1')->get();;
+     // return dd($users);
+        return  view('asignacion.edit',compact('users','asignacion','producto'));
+
+    }
+    public function update(Request $request, $id)
+    {
+        try{  
+            // return response()->json(['mensaje'=>$id]);
+    DB::beginTransaction();
+
+    $asignacion = AsignarProductoEmpleado::findOrFail($id);
+    $producto = Producto::findOrFail($asignacion->producto_id);
+    $asignacion->coteo=$request->coteo;
+    $asignacion->diferencias=$request->diferencias;
+    $asignacion->estado=$producto->stock==$request->coteo?'CONCILIADO':'DIFERENCIA';
+    $producto->condicion=$producto->stock==$request->coteo?'C':'R'; 
+//   return dd($producto->condicion);  
+    $asignacion->update();
+    $producto->update();
+    DB::commit();
+  return response()->json(['mensaje'=>'ok']);
+}catch (\Exception $e) {
+
+    DB::rollback();
+    return response()->json(['mensaje' => 'Error no se logró inventariar correctamente']);
+}    
+    }
+    public function destroy(AsignarProductoEmpleado $asignarProductoEmpleado)
+    {
+        //
+    }
+    public function estado_asignacion(AsignarProductoEmpleado $asignar)
+    {
+       if ($asignar->estado=='PENDIENTE') {
+           $asignar->update(['estado'=>'CONTADO']);
+           return redirect()->back();
+       }else{
+           $asignar->update(['estado'=>'PENDIENTE']);
+           return redirect()->back();
+       }
+    }
+}
